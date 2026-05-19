@@ -1,0 +1,15 @@
+[Unit]
+Description=Deal Hunter Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=danilo
+WorkingDirectory=/home/danilo/progetti/deal-hunter
+EnvironmentFile=/home/danilo/progetti/deal-hunter/.env
+ExecStart=/home/danilo/progetti/deal-hunter/venv/bin/python3 bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

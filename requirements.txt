@@ -1,0 +1,7 @@
+python-telegram-bot
+vinted-scraper
+beautifulsoup4
+requests
+apscheduler
+playwright
+playwright-stealth

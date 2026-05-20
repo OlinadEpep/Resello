@@ -1,6 +1,8 @@
 from vinted_scraper import VintedScraper
 import statistics
-import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_vinted_market_price(query):
     scraper = VintedScraper("https://www.vinted.it")
@@ -12,7 +14,6 @@ def get_vinted_market_price(query):
         
         prices = []
         for item in items:
-            # item.price is usually a string or float depending on the library version
             try:
                 p = float(item.price)
                 prices.append(p)
@@ -30,10 +31,11 @@ def get_vinted_market_price(query):
             
         return round(statistics.median(prices), 2)
     except Exception as e:
-        print(f"Vinted market price error: {e}")
+        logger.error(f"Vinted market price error for '{query}': {e}")
         return None
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     q = "Nintendo 3DS"
     price = get_vinted_market_price(q)
     print(f"Vinted Market Price for '{q}': {price}€")

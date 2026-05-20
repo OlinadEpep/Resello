@@ -5,10 +5,11 @@ import sqlite3
 import random
 import re
 from datetime import timedelta
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 from vinted_scraper import VintedScraper
 from vinted_market import get_vinted_market_price
+from ebay_scraper import eBayScraper
 
 from dotenv import load_dotenv
 
@@ -20,6 +21,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 DB_PATH = "deals.db"
 
@@ -49,7 +51,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• `/stop [oggetto]` - Ferma il monitoraggio di un oggetto.\n\n"
         "3️⃣ **Altro:**\n"
         "• `/help` - Mostra questo messaggio.\n\n"
-        "💡 *Il bot controlla Vinted ogni 10 minuti e ti invia un link appena trova un'offerta!*"
+        "💡 *Il bot controlla Vinted ed eBay ogni 10 minuti e ti invia un link appena trova un'offerta!*"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
@@ -80,8 +82,14 @@ async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Calculate market price even if custom price is set, as a reference
     market_price = get_vinted_market_price(query)
     
+    # Try eBay if Vinted fails
+    if not market_price:
+        logger.info(f"Vinted market price failed for {query}, trying eBay...")
+        e_scraper = eBayScraper()
+        market_price = await e_scraper.get_market_price(query)
+    
     if not market_price and not custom_price:
-        await update.message.reply_text("Non sono riuscito a trovare abbastanza dati su Vinted e non hai impostato un prezzo manuale.")
+        await update.message.reply_text("Non sono riuscito a recuperare dati di mercato da Vinted o eBay. Riprova o imposta un prezzo manuale con `| prezzo`.")
         return
 
     # Use 70% of market price as default if no custom price is set
@@ -101,20 +109,21 @@ async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price_mode = f"🎯 Prezzo massimo impostato: **{custom_price}€** (Manuale)" if custom_price else f"🚀 Notifiche per offerte sotto i **{round(effective_max, 2)}€** (Auto -30%)"
         
         await update.message.reply_text(
-            f"✅ Monitoraggio avviato!\n"
+            f"✅ Monitoraggio avviato su Vinted ed eBay!\n"
             f"📦 Oggetto: {query}\n"
             f"{market_info}"
             f"{price_mode}",
             parse_mode="Markdown"
         )
     except Exception as e:
+        logger.error(f"Database error in cerca: {e}")
         await update.message.reply_text(f"Errore nel database: {e}")
 
 async def lista(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     conn = get_db()
     cursor = conn.cursor()
-    items = cursor.execute("SELECT name, market_price, max_price FROM items WHERE chat_id = ? AND is_active = 1", (chat_id,)).fetchall()
+    items = cursor.execute("SELECT id, name, market_price, max_price FROM items WHERE chat_id = ? AND is_active = 1", (chat_id,)).fetchall()
     conn.close()
     
     if not items:
@@ -122,15 +131,36 @@ async def lista(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = "📝 **Oggetti in monitoraggio qui:**\n\n"
+    keyboard = []
     for item in items:
         target = item['max_price'] if item['max_price'] else round(item['market_price'] * 0.7, 2)
-        mode = "(Manuale)" if item['max_price'] else "(Auto -30%)"
-        text += f"• **{item['name']}**\n  Target: {target}€ {mode}\n"
-    await update.message.reply_text(text, parse_mode="Markdown")
+        mode = "M" if item['max_price'] else "A"
+        text += f"• **{item['name']}** - Target: {target}€ ({mode})\n"
+        keyboard.append([InlineKeyboardButton(f"🛑 Stop {item['name'][:20]}", callback_data=f"stop_{item['id']}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+
+async def stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    item_id = query.data.split("_")[1]
+    conn = get_db()
+    cursor = conn.cursor()
+    # Get item name for the message
+    item = cursor.execute("SELECT name FROM items WHERE id = ?", (item_id,)).fetchone()
+    if item:
+        cursor.execute("DELETE FROM items WHERE id = ?", (item_id,))
+        conn.commit()
+        await query.edit_message_text(text=f"🛑 Monitoraggio fermato per '{item['name']}'.")
+    else:
+        await query.edit_message_text(text="Oggetto non trovato o già rimosso.")
+    conn.close()
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Specifica l'oggetto da fermare.")
+        await update.message.reply_text("Specifica l'oggetto da fermare o usa /lista per vedere i pulsanti.")
         return
     
     query = " ".join(context.args)
@@ -144,56 +174,72 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🛑 Monitoraggio fermato per '{query}'.")
 
 async def check_deals_callback(context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Avvio controllo offerte...")
     conn = get_db()
     cursor = conn.cursor()
     items = cursor.execute("SELECT id, name, market_price, max_price, chat_id FROM items WHERE is_active = 1").fetchall()
     
-    scraper = VintedScraper("https://www.vinted.it")
+    v_scraper = VintedScraper("https://www.vinted.it")
+    e_scraper = eBayScraper()
     
     for item in items:
         query = item['name']
         market_price = item['market_price']
         custom_max = item['max_price']
         chat_id = item['chat_id']
-        
-        # Determine the target price for notification
         threshold = custom_max if custom_max else (market_price * 0.7 if market_price else 0)
         
         if threshold == 0: continue
 
+        # Vinted Search
         try:
-            found_items = scraper.search({"search_text": query})
-            for f_item in found_items:
+            found_vinted = v_scraper.search({"search_text": query})
+            for f_item in found_vinted:
                 try:
                     price = float(f_item.price)
                 except: continue
                 
                 if price <= threshold:
-                    cursor.execute("SELECT id FROM found_deals WHERE url = ?", (f_item.url,))
-                    if not cursor.fetchone():
-                        cursor.execute("INSERT INTO found_deals (item_id, url, price, platform) VALUES (?, ?, ?, ?)",
-                                       (item['id'], f_item.url, price, "Vinted"))
-                        conn.commit()
-                        
-                        saving = f" (Sconto {round((1 - price/market_price)*100, 1)}%)" if market_price else ""
-                        msg = (
-                            f"🔥 **AFFARE TROVATO!** 🔥\n\n"
-                            f"📦 **{f_item.title}**\n"
-                            f"💰 Prezzo: **{price}€**{saving}\n"
-                            f"🎯 Target: {threshold}€\n\n"
-                            f"🔗 [Vedi su Vinted]({f_item.url})"
-                        )
-                        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+                    await notify_deal(conn, cursor, chat_id, item['id'], f_item.title, price, f_item.url, "Vinted", market_price, threshold, context)
         except Exception as e:
-            logging.error(f"Errore nel task per {query}: {e}")
+            logger.error(f"Errore Vinted per {query}: {e}")
+
+        # eBay Search
+        try:
+            found_ebay = await e_scraper.search_deals(query, threshold)
+            for f_item in found_ebay:
+                await notify_deal(conn, cursor, chat_id, item['id'], f_item['title'], f_item['price'], f_item['url'], "eBay", market_price, threshold, context)
+        except Exception as e:
+            logger.error(f"Errore eBay per {query}: {e}")
             
     conn.close()
+
+async def notify_deal(conn, cursor, chat_id, item_id, title, price, url, platform, market_price, threshold, context):
+    cursor.execute("SELECT id FROM found_deals WHERE url = ?", (url,))
+    if not cursor.fetchone():
+        cursor.execute("INSERT INTO found_deals (item_id, url, price, platform) VALUES (?, ?, ?, ?)",
+                       (item_id, url, price, platform))
+        conn.commit()
+        
+        saving = f" (Sconto {round((1 - price/market_price)*100, 1)}%)" if market_price else ""
+        icon = "👕" if platform == "Vinted" else "📦"
+        msg = (
+            f"🔥 **AFFARE TROVATO SU {platform.upper()}!** {icon}\n\n"
+            f"📦 **{title}**\n"
+            f"💰 Prezzo: **{price}€**{saving}\n"
+            f"🎯 Target: {threshold}€\n\n"
+            f"🔗 [Vedi su {platform}]({url})"
+        )
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Errore invio messaggio a {chat_id}: {e}")
 
 if __name__ == '__main__':
     TOKEN = os.getenv("TELEGRAM_TOKEN")
     
     if not TOKEN:
-        print("Errore: La variabile d'ambiente TELEGRAM_TOKEN non è impostata.")
+        logger.error("TELEGRAM_TOKEN non impostata.")
         exit(1)
 
     app = ApplicationBuilder().token(TOKEN).build()
@@ -203,9 +249,10 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("cerca", cerca))
     app.add_handler(CommandHandler("lista", lista))
     app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CallbackQueryHandler(stop_callback, pattern="^stop_"))
     
     job_queue = app.job_queue
     job_queue.run_repeating(check_deals_callback, interval=600, first=10)
     
-    print("Bot avviato...")
+    logger.info("Bot avviato...")
     app.run_polling()

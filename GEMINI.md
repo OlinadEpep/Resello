@@ -1,13 +1,12 @@
 # Deal Hunter Bot
 
-A Telegram bot that monitors Vinted and eBay for deals. It calculates market prices based on current and past listings and notifies users when items are found below a target price (defaulting to 30% below market value).
+A Telegram bot that monitors Vinted for deals. It calculates market prices based on current and past listings and notifies users when items are found below a target price (defaulting to 30% below market value).
 
 ## Project Overview
 
 - **Main Technologies:** Python, `python-telegram-bot`, SQLite, Playwright, BeautifulSoup, `vinted-scraper`.
 - **Architecture:**
     - `bot.py`: Telegram interface, command handling, and job scheduling (apscheduler).
-    - `ebay_scraper.py`: Playwright-based scraper for eBay listings and sold items.
     - `vinted_market.py`: Vinted price estimation using the `vinted-scraper` library.
     - `init_db.py`: Database schema initialization.
     - `main.py`: Application entry point.
@@ -48,8 +47,7 @@ A Telegram bot that monitors Vinted and eBay for deals. It calculates market pri
 
 - **Database:** Uses SQLite for persistence. The `items` table tracks monitored queries, and `found_deals` tracks already notified URLs to avoid spam.
 - **Scraping:**
-    - eBay scraping uses Playwright in headless mode with stealth tactics to avoid detection.
-    - Vinted scraping relies on the `vinted-scraper` library.
+    - Vinted scraping relies on the `vinted-scraper` library and Playwright fallback.
 - **Scheduling:** The bot checks for new deals every 10 minutes (defined in `bot.py`).
 - **Market Price:** Calculated using the median price of results, with outliers trimmed (top/bottom 10-20%).
 

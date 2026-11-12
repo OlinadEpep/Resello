@@ -126,6 +126,12 @@ async def init_db(db_path=None):
             UNIQUE(chat_id, search_url)
         )
         ''')
+        # match_text = nome esatto del prodotto (/notifica per nome): se c'è,
+        # si notificano solo gli annunci che lo hanno nel titolo.
+        async with db.execute("PRAGMA table_info(alerts)") as cursor:
+            alert_columns = [row[1] for row in await cursor.fetchall()]
+        if "match_text" not in alert_columns:
+            await db.execute("ALTER TABLE alerts ADD COLUMN match_text TEXT")
         # Annunci già visti per ogni ricerca (solo quelli recenti: i vecchi
         # vengono potati da notifica.process_alert).
         await db.execute('''

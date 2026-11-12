@@ -154,13 +154,20 @@ async def _alerts(path):
             return [dict(r) for r in await cur.fetchall()]
 
 
+async def _match_texts(path):
+    async with aiosqlite.connect(path) as db:
+        async with db.execute("SELECT match_text FROM alerts ORDER BY id") as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+
 async def test_guided_flow_creates_alert_with_all_filters(chat):
     await chat.say("/notifica")
-    assert "1/3 · Categoria" in chat.request.texts()[-1]
+    assert "1/3 · Cosa cerchi" in chat.request.texts()[-1]
 
     await chat.say("jeans skinny uomo")
     labels = [b["text"] for b in chat.request.last_keyboard()]
     assert labels[0] == "Uomo › Vestiti › Jeans › Jeans skinny"
+    assert labels[-2:] == ["🔎 Prodotto «jeans skinny uomo» (nome esatto)", "⏭ Qualsiasi categoria"]
     await chat.press("Jeans skinny")
     assert "2/3 · Brand" in chat.request.texts()[-1]
 
@@ -188,6 +195,7 @@ async def test_guided_flow_creates_alert_with_all_filters(chat):
         "search_url": expected_url, "seeded": 0,
     }]
     assert chat.seeded == [(1, CHAT_ID, expected_url)]   # prima lettura avviata in background
+    assert await _match_texts(chat.db_path) == [None]    # nessun filtro sul titolo
     assert "Notifica attivata" in chat.request.texts()[-1]
 
     # la conversazione è chiusa: un testo libero non viene più interpretato
@@ -283,4 +291,89 @@ async def test_notifiche_lists_and_removes(chat):
     assert "1. 1 brand" in listing and "brand_ids[]=14" in listing
     await chat.press("Rimuovi 1.")
     assert "Notifica rimossa: 1 brand" in chat.request.texts()[-1]
+    assert await _alerts(chat.db_path) == []
+
+
+# --- nome esatto di un prodotto ---------------------------------------------
+
+async def test_product_name_as_command_argument(chat):
+    await chat.say("/notifica rtx 5060")
+    assert "Non ho trovato categorie Vinted per «rtx 5060»" in chat.request.texts()[-1]
+    labels = [b["text"] for b in chat.request.last_keyboard()]
+    assert labels == ["🔎 Prodotto «rtx 5060» (nome esatto)", "⏭ Qualsiasi categoria"]
+
+    await chat.press("Prodotto «rtx 5060»")
+    texts = chat.request.texts()
+    assert texts[-2] == "✅ Prodotto: «rtx 5060» (nome esatto)"
+    assert "Prodotto: «rtx 5060» (nome esatto)" in texts[-1]
+    assert "tutte queste parole nel titolo" in texts[-1]
+    assert "search_text=rtx%205060&amp;order=newest_first" in texts[-1]
+    await chat.press("Attiva notifiche")
+
+    expected_url = "https://www.vinted.it/catalog?search_text=rtx%205060&order=newest_first"
+    assert await _alerts(chat.db_path) == [{
+        "chat_id": CHAT_ID, "label": "Prodotto «rtx 5060»", "search_url": expected_url, "seeded": 0,
+    }]
+    assert await _match_texts(chat.db_path) == ["rtx 5060"]
+    assert chat.seeded == [(1, CHAT_ID, expected_url)]
+    assert "Notifica attivata" in chat.request.texts()[-1]
+
+    # stesso prodotto di nuovo (scritto in modo diverso): niente doppione
+    await chat.say("/notifica")
+    await chat.say('  "rtx   5060" ')
+    await chat.press("Prodotto «rtx 5060»")
+    await chat.press("Attiva notifiche")
+    assert "Hai già una notifica attiva" in chat.request.texts()[-1]
+    assert len(await _alerts(chat.db_path)) == 1
+
+    await chat.say("/notifiche")
+    assert "1. Prodotto «rtx 5060»" in chat.request.texts()[-1]
+
+
+async def test_product_name_typed_in_the_guided_flow(chat):
+    await chat.say("/notifica")
+    await chat.say("jeans")                     # prima un testo, poi ci ripensa
+    await chat.say("Logitech MX Vertical")
+    await chat.press("Prodotto «Logitech MX Vertical»")
+    assert "Prodotto: «Logitech MX Vertical» (nome esatto)" in chat.request.texts()[-1]
+    await chat.press("Attiva notifiche")
+    (alert,) = await _alerts(chat.db_path)
+    assert alert["label"] == "Prodotto «Logitech MX Vertical»"
+    assert alert["search_url"] == \
+        "https://www.vinted.it/catalog?search_text=Logitech%20MX%20Vertical&order=newest_first"
+    assert await _match_texts(chat.db_path) == ["Logitech MX Vertical"]
+
+
+async def test_product_button_when_text_is_also_a_category(chat):
+    await chat.say("/notifica jeans")
+    assert "Se invece «jeans» è il nome di un prodotto" in chat.request.texts()[-1]
+    await chat.press("Prodotto «jeans»")
+    await chat.press("Annulla")
+    assert await _alerts(chat.db_path) == []
+
+    # la strada "categoria" resta quella di prima, senza filtro sul titolo
+    await chat.say("/notifica jeans")
+    await chat.press("Uomo › Vestiti › Jeans › Jeans skinny")
+    await chat.press("Qualsiasi brand")
+    await chat.press("Qualsiasi taglia")
+    await chat.press("Attiva notifiche")
+    (alert,) = await _alerts(chat.db_path)
+    assert alert["search_url"] == "https://www.vinted.it/catalog?catalog[]=1817&order=newest_first"
+    assert await _match_texts(chat.db_path) == [None]
+
+
+async def test_product_button_not_offered_for_useless_text_and_stale_press(chat):
+    await chat.say("/notifica")
+    await chat.say("5")
+    assert "Non ho trovato categorie per «5»" in chat.request.texts()[-1]
+    assert [b["text"] for b in chat.request.last_keyboard()] == ["⏭ Qualsiasi categoria"]
+    await chat.say("x" * 80)                    # troppo lungo per essere un nome prodotto
+    assert [b["text"] for b in chat.request.last_keyboard()] == ["⏭ Qualsiasi categoria"]
+
+    await chat.press_data("np_ok")              # pulsante vecchio: nessun prodotto in bozza
+    assert "non è più valida" in chat.request.texts()[-1]
+    await chat.say("/annulla")
+    await chat.press_data("np_ok")              # configurazione chiusa
+    method, params = chat.request.calls[-1]
+    assert method == "answerCallbackQuery" and "non è più attivo" in params["text"]
     assert await _alerts(chat.db_path) == []

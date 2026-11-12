@@ -1,11 +1,14 @@
 """Filtri di ricerca Vinted per le notifiche "nuovo annuncio" (/notifica).
 
 Qui vive tutto ciò che serve a trasformare delle preferenze (categoria,
-brand, taglie) in un link di ricerca Vinted con i filtri attivi, e a
-leggere gli annunci dalla pagina dei risultati:
+brand, taglie, oppure il nome esatto di un prodotto) in un link di ricerca
+Vinted con i filtri attivi, e a leggere gli annunci dalla pagina dei
+risultati:
 
 - metadati Vinted (albero categorie, brand, taglie) via le API pubbliche
   che rispondono ancora con `AsyncVintedWrapper.curl`;
+- nome esatto di un prodotto: `product_terms` / `matches_product` (la
+  ricerca testuale di Vinted è larga, il titolo va ricontrollato qui);
 - costruzione/normalizzazione del link di ricerca;
 - parsing della griglia annunci della pagina `/catalog`;
 - regola "è un annuncio nuovo?" (`detect_new_items`).
@@ -170,6 +173,73 @@ def search_categories(flat, text, limit=8):
     return [s[5] for s in scored[:limit]]
 
 
+# --------------------------------------------------------------------------
+# Nome esatto di un prodotto
+# --------------------------------------------------------------------------
+
+PRODUCT_TEXT_MAX_LENGTH = 60
+
+
+def clean_product_text(text):
+    """Nome prodotto come l'ha scritto l'utente, senza spazi doppi o virgolette esterne."""
+    text = " ".join((text or "").split())
+    quotes = "\"'«»“”‘’"
+    if len(text) >= 2 and text[0] in quotes and text[-1] in quotes:
+        text = text[1:-1].strip()
+    return text
+
+
+def _pieces(word):
+    # "5060ti" -> ['5060', 'ti'], "rtx5060" -> ['rtx', '5060']
+    return tuple(re.findall(r"[a-z]+|\d+", word))
+
+
+def product_terms(text):
+    """Parole che un titolo deve contenere per essere «quel prodotto».
+
+    Ogni parola dell'utente diventa una tupla di pezzi, spezzata dove
+    lettere e cifre si toccano: così "rtx 5060" riconosce anche "RTX5060"
+    e "RTX 5060Ti", e "ps5" riconosce "PS 5". Articoli e preposizioni non
+    contano (a meno che non ci sia altro). Lista vuota = testo inutilizzabile.
+    """
+    words = _normalize(text).split()
+    meaningful = [w for w in words if w not in _STOP_TOKENS] or words
+    terms = []
+    for word in meaningful:
+        term = _pieces(word)
+        if term and term not in terms:
+            terms.append(term)
+    if sum(len(p) for term in terms for p in term) < 2:
+        return []  # una lettera o una cifra sola: troppo generico
+    return terms
+
+
+def _contains_run(sequence, run):
+    n = len(run)
+    return any(tuple(sequence[i:i + n]) == run for i in range(len(sequence) - n + 1))
+
+
+def matches_product(terms, *texts):
+    """True se ogni parola del prodotto compare, intera, in uno dei testi.
+
+    `texts` sono titolo e brand dell'annuncio (il brand serve per i titoli
+    tipo "Mouse MX Vertical" con brand Logitech). L'ordine delle parole è
+    libero, ma una parola è sempre intera: "5060" non corrisponde a "15060"
+    e "ps5" non corrisponde a "PS4 con 5 giochi".
+
+    Volutamente nessuna tolleranza su plurali o desinenze: accettare
+    "verticale" per "vertical" farebbe passare annunci veri come "Supporto
+    verticale per tastiera Logitech MX Keys" cercando "logitech mx vertical".
+    """
+    if not terms:
+        return False
+    sequences = [
+        [p for word in _normalize(t).split() for p in _pieces(word)]
+        for t in texts if t
+    ]
+    return all(any(_contains_run(seq, term) for seq in sequences) for term in terms)
+
+
 async def search_brands(text, limit=6):
     """Cerca un brand per nome -> [{'id','title','count'}]."""
     data = await _curl(BRANDS_ENDPOINT, {"keyword": text})
@@ -210,9 +280,12 @@ def _encode_pairs(base, pairs):
     return f"{base}/catalog?{query}"
 
 
-def build_search_url(catalog_id=None, brand_id=None, size_ids=None, base_url=BASE_URL):
+def build_search_url(catalog_id=None, brand_id=None, size_ids=None, search_text=None,
+                     base_url=BASE_URL):
     """Link Vinted con i filtri scelti, ordinato dai più recenti."""
     pairs = []
+    if search_text:
+        pairs.append(("search_text", search_text))
     if catalog_id:
         pairs.append(("catalog[]", catalog_id))
     if brand_id:

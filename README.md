@@ -116,7 +116,7 @@ Interagisci con il bot nella chat Telegram utilizzando i seguenti comandi:
 | `/cerca [oggetto] \| [prezzo]` | Avvia il monitoraggio impostando una soglia di prezzo massimo personalizzata. | `/cerca Nintendo 3DS \| 80` |
 | `/lista` | Mostra gli oggetti attualmente monitorati con la possibilità di rimuoverli tramite pulsante inline. | `/lista` |
 | `/stop [oggetto]` | Interrompe il monitoraggio per l'oggetto specificato. | `/stop Nintendo 3DS` |
-| `/notifica` | Configurazione guidata (categoria → brand → taglie): ricevi un avviso per **ogni nuovo annuncio** pubblicato con quei filtri, a qualsiasi prezzo. Accetta anche il link di una ricerca Vinted già filtrata. | `/notifica` oppure `/notifica jeans skinny uomo` |
+| `/notifica` | Configurazione guidata (categoria → brand → taglie): ricevi un avviso per **ogni nuovo annuncio** pubblicato con quei filtri, a qualsiasi prezzo. Accetta anche il **nome esatto di un prodotto** (avviso solo per gli annunci che lo hanno nel titolo) e il link di una ricerca Vinted già filtrata. | `/notifica`, `/notifica jeans skinny uomo`, `/notifica logitech mx vertical` |
 | `/notifiche` | Mostra le notifiche nuovi annunci attive, con il link alla ricerca e il pulsante per rimuoverle. | `/notifiche` |
 | `/annulla` | Esce dalla configurazione di una notifica. | `/annulla` |
 
@@ -124,9 +124,10 @@ Digitando `/` nella chat Telegram mostra l'elenco di tutti i comandi (il bot lo 
 
 ### 🔔 Come Funzionano le Notifiche Nuovi Annunci
 1. `/notifica` ti chiede categoria, brand e taglie (ogni passo si può saltare, ma serve almeno categoria o brand) e costruisce il link Vinted con tutti i filtri attivi, ordinato dai più recenti.
-2. Gli annunci già presenti vengono solo registrati: non ricevi nulla per quelli.
-3. Ogni **2 minuti** (`ALERT_INTERVAL_SECONDS`) il bot rilegge la ricerca: per ogni annuncio nuovo ricevi titolo, brand, taglia, prezzo, il link dell'annuncio e il link della ricerca filtrata.
-4. Se in un controllo escono più di 8 annunci nuovi (`ALERT_MAX_NOTIFY`) ricevi i più recenti e un riepilogo con il numero degli altri.
+2. In alternativa scrivi il nome esatto di un prodotto (es. `rtx 5060`, `logitech mx vertical`) e tocca il pulsante 🔎 **Prodotto**: il bot usa la ricerca testuale di Vinted ma ti segnala solo gli annunci che hanno **tutte le parole nel titolo** (in qualsiasi ordine, anche scritte attaccate come `RTX5060Ti`), scartando i modelli simili che Vinted aggiunge ai risultati.
+3. Gli annunci già presenti vengono solo registrati: non ricevi nulla per quelli.
+4. Ogni **2 minuti** (`ALERT_INTERVAL_SECONDS`) il bot rilegge la ricerca: per ogni annuncio nuovo ricevi titolo, brand, taglia, prezzo, il link dell'annuncio e il link della ricerca filtrata.
+5. Se in un controllo escono più di 8 annunci nuovi (`ALERT_MAX_NOTIFY`) ricevi i più recenti e un riepilogo con il numero degli altri.
 
 ### 💡 Come Funziona il Monitoraggio
 1. Quando digiti `/cerca Nintendo 3DS`, il bot effettua una ricerca preliminare per calcolare la mediana dei prezzi attuali.

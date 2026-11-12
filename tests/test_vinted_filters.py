@@ -91,6 +91,15 @@ def test_build_search_url_orders_by_newest_and_keeps_all_filters():
         "https://www.vinted.it/catalog?brand_ids[]=14&order=newest_first"
 
 
+def test_build_search_url_with_product_text():
+    assert vf.build_search_url(search_text="logitech mx vertical") == \
+        "https://www.vinted.it/catalog?search_text=logitech%20mx%20vertical&order=newest_first"
+    # il link generato è già nella forma normalizzata (stessa ricerca = stesso link)
+    url = vf.build_search_url(search_text="rtx 5060")
+    assert vf.normalize_search_url(url) == (url, None)
+    assert vf.normalize_search_url("vinted.it/catalog?search_text=rtx+5060&page=3") == (url, None)
+
+
 def test_normalize_search_url_strips_non_filters_and_forces_newest():
     url, err = vf.normalize_search_url(
         "https://www.vinted.it/catalog?search_text=felpa%20nike&catalog[]=79&color_ids[]=1"
@@ -212,3 +221,76 @@ def test_detect_new_items_chronological_and_watermark_never_decreases():
     assert wm == 3003
     assert vf.detect_new_items([], set(), 3000, margin=10) == ([], 3000)
     assert vf.detect_new_items(_items(10), {10}, 3000, margin=10) == ([], 3000)
+
+
+# --- nome esatto di un prodotto ---------------------------------------------
+
+# Titoli (e brand) reali restituiti da Vinted cercando "rtx 5060".
+@pytest.mark.parametrize("title,brand,expected", [
+    ("Gigabyte RTX 5060 windforce MAX", "Gigabyte", True),
+    ("Rtx 5060 low profile", "Gigabyte", True),
+    ("RTX 5060TI 8GB OC Gaming Trio New", "MSI", True),          # attaccato al suffisso
+    ("PC portable gamer ASUS 16\"RTX 5060-32 Go RAM -1 To", "Asus", True),
+    ("Scheda video RTX5060 8 GB", "Asus", True),                 # senza spazio
+    ("🔥PC Gaming | i7 12700 | RTX 5060 8Gb | Ram 16GB DDR5", "Custommade", True),
+    ("RTX 3070 Ti 8GB Founders Edition", "NVIDIA", False),       # altro modello
+    ("Intel ARC B580 Titan Sparkle 12gb ram", "Sparkle", False),
+    ("5060ti AERO 8GB scheda video", "Gigabyte", False),         # manca "rtx"
+    ("Gaming PC (schaut in die Beschreibung)", "Custommade", False),  # solo in descrizione
+    ("RTX 15060 prototipo", None, False),                        # numero diverso
+])
+def test_matches_product_rtx_5060(title, brand, expected):
+    assert vf.matches_product(vf.product_terms("rtx 5060"), title, brand) is expected
+
+
+@pytest.mark.parametrize("title,brand,expected", [
+    ("Logitech mx vertical NUOVO", "Logitech", True),
+    ("Souris Mx Vertical Logitech", "Logitech", True),           # ordine libero
+    ("Mouse MX vertical", "Logitech", True),                     # "logitech" solo nel brand
+    ("Ratón ergonómico inalámbrico Logitech MX Vertical", "Logitech", True),
+    ("Mouse Logitech MX Master 2S", "Logitech", False),
+    ("Logitech MX Verticale Mouse Wireless Ergonomico", "Logitech", False),  # parola diversa
+    ("Supporto verticale per tastiera Logitech MX Key beige", None, False),
+    ("Trust Mouse Minimal Design. Art.53926", "Trust", False),
+    ("Souris ergonomique", "Logitech", False),
+])
+def test_matches_product_logitech_mx_vertical(title, brand, expected):
+    assert vf.matches_product(vf.product_terms("Logitech MX Vertical"), title, brand) is expected
+
+
+def test_product_terms_split_letters_and_digits_but_keep_words_whole():
+    assert vf.product_terms("RTX 5060") == [("rtx",), ("5060",)]
+    assert vf.product_terms("rtx5060") == [("rtx", "5060")]
+    ps5 = vf.product_terms("ps5")
+    assert vf.matches_product(ps5, "Sony PS 5 slim", None)
+    assert vf.matches_product(ps5, "Console PS5 + 2 giochi", None)
+    assert not vf.matches_product(ps5, "PS4 con 5 giochi", None)   # i pezzi devono essere vicini
+    # accenti, maiuscole e punteggiatura non contano
+    assert vf.matches_product(vf.product_terms("caffè"), "Macchina CAFFE' Bialetti", None)
+    # il prodotto non può stare a cavallo tra titolo e brand
+    assert not vf.matches_product(vf.product_terms("ps5"), "Console PS", "5 stelle")
+
+
+def test_matches_product_is_strict_on_word_endings():
+    def match(product, title):
+        return vf.matches_product(vf.product_terms(product), title)
+
+    assert not match("iphone 15 pro", "iPhone 15 Prox")
+    assert not match("rtx 5060", "RTX 50601")
+    assert not match("galaxy s24", "Galaxy S245")
+    assert not match("vertical", "Mouse verticale")       # nome esatto: niente desinenze
+
+
+def test_product_terms_ignore_fillers_and_reject_useless_text():
+    assert vf.product_terms("borsa di gucci") == [("borsa",), ("gucci",)]
+    assert vf.product_terms("the") == [("the",)]          # solo parole "vuote": restano
+    assert vf.product_terms("rtx rtx 5060") == [("rtx",), ("5060",)]
+    for useless in ("", "   ", "?!", "5", "a"):
+        assert vf.product_terms(useless) == []
+    assert vf.matches_product([], "qualsiasi titolo") is False
+
+
+def test_clean_product_text():
+    assert vf.clean_product_text('  "logitech   mx vertical" ') == "logitech mx vertical"
+    assert vf.clean_product_text("«rtx 5060»") == "rtx 5060"
+    assert vf.clean_product_text("monitor 27'") == "monitor 27'"   # apostrofo solo in fondo: resta

@@ -2,8 +2,15 @@
 
 Flusso Telegram (ConversationHandler):
     /notifica -> categoria -> brand -> taglie -> riepilogo -> attiva
+    /notifica -> nome esatto di un prodotto -> riepilogo -> attiva
 In qualsiasi momento del primo passo si può incollare direttamente il link
 di una ricerca Vinted già filtrata.
+
+Per nome prodotto (es. "rtx 5060") la ricerca salvata è la ricerca
+testuale di Vinted, che però è larga (trova anche modelli simili e
+annunci che citano il prodotto solo nella descrizione): per questo
+`alerts.match_text` conserva il nome e `process_alert` notifica solo gli
+annunci che lo hanno davvero nel titolo (`vinted_filters.matches_product`).
 
 Ogni ricerca salvata (tabella `alerts`) viene ricontrollata dal job
 `check_alerts_callback`: la pagina Vinted ordinata dai più recenti viene
@@ -98,8 +105,11 @@ def _end(context):
 CATEGORY_PROMPT = (
     "🔔 <b>Nuova notifica Vinted</b>\n"
     "Ti scrivo ogni volta che su Vinted esce un nuovo annuncio con i filtri che scegli.\n\n"
-    "<b>1/3 · Categoria</b>\n"
-    "Scrivi cosa cerchi, ad esempio <i>jeans skinny uomo</i> oppure <i>felpe donna</i>.\n\n"
+    "<b>1/3 · Cosa cerchi</b>\n"
+    "• Una <b>categoria</b>, ad esempio <i>jeans skinny uomo</i> oppure <i>felpe donna</i>: "
+    "poi scegli brand e taglia.\n"
+    "• Il <b>nome esatto di un prodotto</b>, ad esempio <i>logitech mx vertical</i> "
+    "oppure <i>rtx 5060</i>: ti avviso solo per gli annunci che lo hanno nel titolo.\n\n"
     "💡 In alternativa incolla il link di una ricerca Vinted con i filtri già impostati "
     "(colore, condizioni, prezzo...).\n\n"
     "/annulla per uscire."
@@ -122,10 +132,14 @@ _ANY_BRAND_KB = InlineKeyboardMarkup(
 )
 
 
+def _product_button(text):
+    return InlineKeyboardButton(_short(f"🔎 Prodotto «{text}» (nome esatto)"), callback_data="np_ok")
+
+
 async def notifica_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data[_STATE_KEY] = {}
     if context.args:
-        # /notifica jeans skinny uomo   oppure   /notifica <link>
+        # /notifica jeans skinny uomo  |  /notifica rtx 5060  |  /notifica <link>
         return await _handle_category_text(update, context, " ".join(context.args))
     await update.effective_message.reply_text(
         CATEGORY_PROMPT, parse_mode="HTML", reply_markup=_ANY_CATEGORY_KB
@@ -163,27 +177,64 @@ async def _handle_category_text(update, context, text):
         )
         return CATEGORY
 
+    # Lo stesso testo può essere una categoria ("jeans skinny uomo") oppure
+    # il nome di un prodotto ("rtx 5060"): si propongono entrambe le strade.
+    draft = _draft(context)
+    product = vf.clean_product_text(text)
+    if not vf.product_terms(product) or len(product) > vf.PRODUCT_TEXT_MAX_LENGTH:
+        product = None
+    draft["product_text"] = product
+    any_row = [InlineKeyboardButton("⏭ Qualsiasi categoria", callback_data="nc_any")]
+
     results = vf.search_categories(flat, text)
     if not results:
-        await msg.reply_text(
-            f"Non ho trovato categorie per «{text}».\n"
-            "Prova con parole più semplici (es. jeans, felpe, sneakers uomo) "
-            "oppure incolla il link di una ricerca Vinted.",
-            reply_markup=_ANY_CATEGORY_KB,
-        )
+        draft.pop("cat_options", None)
+        if product:
+            await msg.reply_text(
+                f"Non ho trovato categorie Vinted per «{text}».\n\n"
+                "Se è il nome di un prodotto tocca il pulsante qui sotto: ti avviso per ogni "
+                "nuovo annuncio che ha tutte queste parole nel titolo.\n"
+                "Altrimenti scrivi altre parole, oppure incolla il link di una ricerca Vinted.",
+                reply_markup=InlineKeyboardMarkup([[_product_button(product)], any_row]),
+            )
+        else:
+            await msg.reply_text(
+                f"Non ho trovato categorie per «{text}».\n"
+                "Prova con parole più semplici (es. jeans, felpe, sneakers uomo), "
+                "con il nome di un prodotto (es. rtx 5060) "
+                "oppure incolla il link di una ricerca Vinted.",
+                reply_markup=_ANY_CATEGORY_KB,
+            )
         return CATEGORY
 
-    _draft(context)["cat_options"] = {c["id"]: c for c in results}
+    draft["cat_options"] = {c["id"]: c for c in results}
     keyboard = [
         [InlineKeyboardButton(_category_button_text(c), callback_data=f"nc_{c['id']}")]
         for c in results
     ]
-    keyboard.append([InlineKeyboardButton("⏭ Qualsiasi categoria", callback_data="nc_any")])
-    await msg.reply_text(
-        "Scegli la categoria (oppure scrivi altre parole per cercare di nuovo):",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    prompt = "Scegli la categoria (oppure scrivi altre parole per cercare di nuovo)"
+    if product:
+        keyboard.append([_product_button(product)])
+        prompt += f".\nSe invece «{product}» è il nome di un prodotto, tocca 🔎."
+    else:
+        prompt += ":"
+    keyboard.append(any_row)
+    await msg.reply_text(prompt, reply_markup=InlineKeyboardMarkup(keyboard))
     return CATEGORY
+
+
+async def product_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Il testo scritto al primo passo è il nome esatto di un prodotto."""
+    query = update.callback_query
+    await query.answer()
+    draft = _draft(context)
+    product = draft.get("product_text")
+    if not product:
+        await query.edit_message_text("Questa scelta non è più valida, scrivi di nuovo cosa cerchi.")
+        return CATEGORY
+    draft["product"] = product
+    await query.edit_message_text(f"✅ Prodotto: «{product}» (nome esatto)")
+    return await _show_confirm(query.message, context)
 
 
 async def category_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -335,6 +386,11 @@ def _finalize_draft(draft):
     """Completa la bozza guidata con link di ricerca ed etichetta."""
     if draft.get("from_link"):
         return
+    if draft.get("product"):
+        draft["url"] = vf.build_search_url(search_text=draft["product"])
+        draft["label"] = f"Prodotto «{draft['product']}»"
+        draft["match_text"] = draft["product"]
+        return
     catalog, brand = draft.get("catalog"), draft.get("brand")
     sizes = _selected_size_names(draft)
     draft["url"] = vf.build_search_url(
@@ -358,6 +414,12 @@ async def _show_confirm(message, context):
     _finalize_draft(draft)
     if draft.get("from_link"):
         summary = f"• Ricerca dal tuo link: {html.escape(draft['label'])}"
+    elif draft.get("product"):
+        summary = (
+            f"• Prodotto: «{html.escape(draft['product'])}» (nome esatto)\n"
+            "• Ti segnalo solo gli annunci che hanno tutte queste parole nel titolo, "
+            "in qualsiasi ordine; quelli che Vinted mostra solo perché simili li scarto."
+        )
     else:
         catalog, brand = draft.get("catalog"), draft.get("brand")
         sizes = _selected_size_names(draft)
@@ -391,7 +453,9 @@ async def confirm_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return _end(context)
 
     async with aiosqlite.connect(DB_PATH) as db:
-        status, alert_id = await create_alert(db, chat_id, label, url)
+        status, alert_id = await create_alert(
+            db, chat_id, label, url, match_text=draft.get("match_text")
+        )
 
     if status == "duplicate":
         await query.edit_message_text(
@@ -503,8 +567,12 @@ async def alert_stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 # DB
 # --------------------------------------------------------------------------
 
-async def create_alert(db, chat_id, label, search_url):
-    """Ritorna ('created', id) | ('duplicate', None) | ('limit', None)."""
+async def create_alert(db, chat_id, label, search_url, match_text=None):
+    """Ritorna ('created', id) | ('duplicate', None) | ('limit', None).
+
+    `match_text` = nome esatto del prodotto: se presente, vengono notificati
+    solo gli annunci che lo hanno nel titolo (vedi `process_alert`).
+    """
     async with db.execute(
         "SELECT COUNT(*) FROM alerts WHERE chat_id = ? AND is_active = 1", (chat_id,)
     ) as cur:
@@ -513,8 +581,8 @@ async def create_alert(db, chat_id, label, search_url):
         return "limit", None
     try:
         cur = await db.execute(
-            "INSERT INTO alerts (chat_id, label, search_url) VALUES (?, ?, ?)",
-            (chat_id, label, search_url),
+            "INSERT INTO alerts (chat_id, label, search_url, match_text) VALUES (?, ?, ?, ?)",
+            (chat_id, label, search_url, match_text or None),
         )
     except sqlite3.IntegrityError:
         return "duplicate", None
@@ -615,6 +683,12 @@ async def process_alert(db, alert, items, bot, get_global_watermark, pause=1.1):
     async with db.execute("SELECT item_id FROM alert_seen WHERE alert_id = ?", (alert_id,)) as cur:
         seen = {row[0] for row in await cur.fetchall()}
     new, watermark = vf.detect_new_items(items, seen, alert["watermark"], ALERT_ID_MARGIN)
+    if alert["match_text"]:
+        # Nome esatto di un prodotto: la ricerca testuale di Vinted restituisce
+        # anche modelli simili, quindi il titolo va ricontrollato. Gli scartati
+        # finiscono comunque tra i "già visti" più sotto.
+        terms = vf.product_terms(alert["match_text"])
+        new = [it for it in new if vf.matches_product(terms, it.get("title"), it.get("brand"))]
 
     to_send = new[-ALERT_MAX_NOTIFY:]  # i più recenti, in ordine cronologico
     skipped = len(new) - len(to_send)
@@ -694,7 +768,7 @@ async def run_alert_cycle(db, alerts, scraper, bot, pause=1.1):
 
 async def _active_alerts(db, alert_id=None):
     db.row_factory = aiosqlite.Row
-    sql = ("SELECT id, chat_id, label, search_url, watermark, seeded "
+    sql = ("SELECT id, chat_id, label, search_url, watermark, seeded, match_text "
            "FROM alerts WHERE is_active = 1")
     params = ()
     if alert_id is not None:
@@ -787,6 +861,7 @@ def build_conversation():
                 CATEGORY: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, category_text),
                     CallbackQueryHandler(category_chosen, pattern=r"^nc_(any|\d+)$"),
+                    CallbackQueryHandler(product_chosen, pattern=r"^np_ok$"),
                 ],
                 BRAND: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, brand_text),
@@ -805,7 +880,7 @@ def build_conversation():
             fallbacks=[
                 CommandHandler("annulla", cancel),
                 MessageHandler(filters.COMMAND, _other_command),
-                CallbackQueryHandler(_stale_button, pattern=r"^n[cbsk]_"),
+                CallbackQueryHandler(_stale_button, pattern=r"^n[cbskp]_"),
             ],
             allow_reentry=True,
             conversation_timeout=CONVERSATION_TIMEOUT_SECONDS,
@@ -823,7 +898,7 @@ def register(app):
     app.add_handler(CallbackQueryHandler(alert_stop_callback, pattern=r"^alertstop_\d+$"))
     app.add_handler(build_conversation(), group=1)
     # Pulsanti di una configurazione ormai chiusa
-    app.add_handler(CallbackQueryHandler(_stale_button, pattern=r"^n[cbsk]_"), group=1)
+    app.add_handler(CallbackQueryHandler(_stale_button, pattern=r"^n[cbskp]_"), group=1)
     if app.job_queue:
         app.job_queue.run_repeating(
             check_alerts_callback, interval=ALERT_INTERVAL_SECONDS, first=45

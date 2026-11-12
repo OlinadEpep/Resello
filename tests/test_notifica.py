@@ -55,8 +55,8 @@ async def db(tmp_path, monkeypatch):
     await conn.close()
 
 
-async def _alert(db, chat_id=1, url=URL, label="Pantaloni · adidas"):
-    status, alert_id = await notifica.create_alert(db, chat_id, label, url)
+async def _alert(db, chat_id=1, url=URL, label="Pantaloni · adidas", match_text=None):
+    status, alert_id = await notifica.create_alert(db, chat_id, label, url, match_text=match_text)
     assert status == "created"
     return alert_id
 
@@ -219,3 +219,76 @@ def test_alert_message_without_optional_fields():
         "price": None, "total_price": None, "url": "https://www.vinted.it/items/1-x",
     })
     assert "Solo titolo" in text and "🏷" not in text and "💰" not in text
+
+
+# --- nome esatto di un prodotto ---------------------------------------------
+
+PRODUCT_URL = "https://www.vinted.it/catalog?search_text=rtx%205060&order=newest_first"
+
+
+async def test_product_alert_notifies_only_titles_with_the_exact_name(db):
+    bot = FakeBot()
+    alert_id = await _alert(db, url=PRODUCT_URL, label="Prodotto «rtx 5060»", match_text="rtx 5060")
+    assert (await _row(db, alert_id))["match_text"] == "rtx 5060"
+    await _step(db, alert_id, [item(5000, "Rtx 5060 ventus")], bot)
+
+    page = [
+        item(5040, "MSI RTX5060TI 16GB"),                 # sì: scritto attaccato
+        item(5030, "RTX 3070 Ti Founders Edition"),       # no: Vinted lo mostra perché simile
+        item(5020, "Gaming PC (vedi descrizione)"),       # no: il nome è solo in descrizione
+        item(5010, "Scheda video rtx 5060 8gb"),          # sì
+        item(5000, "Rtx 5060 ventus"),
+    ]
+    assert await _step(db, alert_id, page, bot) == 2
+    texts = [t for _, t in bot.sent]
+    assert "Scheda video rtx 5060 8gb" in texts[0] and "MSI RTX5060TI 16GB" in texts[1]
+    assert all("Prodotto «rtx 5060»" in t and "search_text=rtx%205060" in t for t in texts)
+
+    # gli scartati sono comunque "già visti": non tornano e non vengono ricontati
+    assert await _step(db, alert_id, page, bot) == 0
+    assert len(bot.sent) == 2
+    assert (await _row(db, alert_id))["watermark"] == 5040
+
+
+async def test_product_alert_matches_brand_and_caps_only_real_matches(db):
+    bot = FakeBot()
+    alert_id = await _alert(db, url=PRODUCT_URL, label="Prodotto «logitech mx vertical»",
+                            match_text="logitech mx vertical")
+    await _step(db, alert_id, [item(5000)], bot)
+    page = [dict(item(5010, "Mouse MX Vertical"), brand="Logitech")]
+    page += [item(5020 + i, "Mouse Trust qualsiasi") for i in range(10)]   # 10 non pertinenti
+    assert await _step(db, alert_id, page, bot) == 1
+    assert len(bot.sent) == 1 and "Mouse MX Vertical" in bot.sent[0][1]    # nessun "Altri N annunci"
+
+
+async def test_same_search_url_with_and_without_exact_name(db):
+    """Stesso link in due chat: una col nome esatto, una senza (link incollato)."""
+    bot = FakeBot()
+    exact = await _alert(db, chat_id=1, url=PRODUCT_URL, label="Prodotto «rtx 5060»", match_text="rtx 5060")
+    loose = await _alert(db, chat_id=2, url=PRODUCT_URL, label="«rtx 5060»")
+    for alert_id in (exact, loose):
+        await _step(db, alert_id, [item(5000)], bot)
+    page = [item(5020, "RTX 3070 Ti"), item(5010, "Rtx 5060 nuova"), item(5000)]
+    assert await _step(db, exact, page, bot) == 1
+    assert await _step(db, loose, page, bot) == 2
+    assert [chat for chat, _ in bot.sent] == [1, 2, 2]
+
+
+async def test_init_db_adds_match_text_to_existing_alerts_table(tmp_path):
+    path = str(tmp_path / "old.db")
+    async with aiosqlite.connect(path) as conn:      # tabella com'era prima della colonna
+        await conn.execute(
+            "CREATE TABLE alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, "
+            "label TEXT NOT NULL, search_url TEXT NOT NULL, watermark INTEGER DEFAULT 0, "
+            "seeded INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, "
+            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_check DATETIME, "
+            "UNIQUE(chat_id, search_url))"
+        )
+        await conn.execute("INSERT INTO alerts (chat_id, label, search_url) VALUES (1, 'vecchia', ?)", (URL,))
+        await conn.commit()
+    await init_db.init_db(path)
+    await init_db.init_db(path)                       # idempotente
+    async with aiosqlite.connect(path) as conn:
+        (old,) = await notifica._active_alerts(conn)
+        assert old["label"] == "vecchia" and old["match_text"] is None
+        assert await notifica.create_alert(conn, 1, "p", PRODUCT_URL, match_text="rtx 5060") == ("created", 2)

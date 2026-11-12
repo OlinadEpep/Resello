@@ -64,6 +64,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3️⃣ **Notifiche nuovi annunci:**\n"
         "• `/notifica` - Scegli categoria, brand e taglia: ti avviso per ogni "
         "nuovo annuncio pubblicato con quei filtri (qualsiasi prezzo).\n"
+        "• `/notifica [nome prodotto]` - Ti avviso per ogni nuovo annuncio che ha "
+        "quel nome esatto nel titolo.\n"
+        "  *Esempio: `/notifica logitech mx vertical`*\n"
         "• `/notifiche` - Mostra le notifiche attive e permette di rimuoverle.\n"
         "• `/annulla` - Esce dalla configurazione di una notifica.\n\n"
         "4️⃣ **Altro:**\n"
@@ -593,7 +596,7 @@ BOT_COMMANDS = [
     BotCommand("cerca", "Monitora un oggetto: avviso se sotto prezzo"),
     BotCommand("lista", "Oggetti monitorati con /cerca"),
     BotCommand("stop", "Ferma il monitoraggio di un oggetto"),
-    BotCommand("notifica", "Avviso per ogni nuovo annuncio con i tuoi filtri"),
+    BotCommand("notifica", "Avviso per ogni nuovo annuncio (filtri o nome prodotto)"),
     BotCommand("notifiche", "Notifiche nuovi annunci attive"),
     BotCommand("annulla", "Esci dalla configurazione di una notifica"),
     BotCommand("funzionamento", "Come ragiona il bot"),

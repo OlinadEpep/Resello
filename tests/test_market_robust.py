@@ -1,7 +1,7 @@
 """Fase 4: regression PS5 + guardrail + sanity + Jev-mock."""
 
-import vinted_market
-from utils import robust_median, sanity_check_market, extract_dynamic_keywords
+from deal_hunter.vinted import market as vinted_market
+from deal_hunter.core.utils import robust_median, sanity_check_market, extract_dynamic_keywords
 
 
 class FakeItem:
@@ -126,7 +126,7 @@ async def test_sanity_ps5_band():
 
 
 async def test_dynamic_finds_box_now():
-    from utils import compute_service_fee, DEFAULT_SHIPPING
+    from deal_hunter.core.utils import compute_service_fee, DEFAULT_SHIPPING
     items = ([{'title': 'PS5 console disco', 'price': 330.0}] * 8
              + [{'title': 'scatola vuota PS5', 'price': 15.0}] * 4)
     kws = extract_dynamic_keywords(items, 'playstation 5')

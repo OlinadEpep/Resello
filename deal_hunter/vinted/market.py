@@ -1,6 +1,6 @@
 from vinted_scraper import AsyncVintedScraper
-from vinted_playwright import VintedPlaywrightScraper
-from utils import (
+from deal_hunter.vinted.playwright_scraper import VintedPlaywrightScraper
+from deal_hunter.core.utils import (
     is_valid_item,
     compute_service_fee,
     DEFAULT_SHIPPING,
@@ -88,7 +88,7 @@ async def _apply_jev_market_filter(query, items_data):
     configurato/errore -> ritorna input invariato con reason fallback.
     """
     try:
-        from deal_judge import get_judge
+        from deal_hunter.jev.judge import get_judge
         jev = get_judge()
     except Exception as e:
         logger.debug(f"Jev market filter non disponibile: {e}")
@@ -135,7 +135,7 @@ async def get_vinted_market_price(query):
     funzionare se prendono i primi due (bot.py aggiornato a 3).
     Fasi: multipagina -> regex/dynamic -> Jev full-product -> IQR -> sanity.
     """
-    from utils import extract_dynamic_keywords as _edk  # noqa (re-export stabile)
+    from deal_hunter.core.utils import extract_dynamic_keywords as _edk  # noqa (re-export stabile)
     t0 = time.monotonic()
     scraper = await AsyncVintedScraper.create("https://www.vinted.it")
     try:

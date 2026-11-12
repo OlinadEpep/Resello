@@ -2,7 +2,7 @@
 
 import pytest
 
-import vinted_filters as vf
+from deal_hunter.vinted import filters as vf
 
 TREE = [
     {"id": 5, "title": "Uomo", "catalogs": [

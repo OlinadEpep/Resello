@@ -14,8 +14,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler
 from telegram.request import BaseRequest
 
-import init_db
-import notifica
+from deal_hunter.core import db as init_db
+from deal_hunter.bot import notifica
 
 CHAT_ID, USER_ID = 555, 777
 CATS = [

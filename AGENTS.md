@@ -8,7 +8,7 @@
 **Solution Implemented**:
 1. **Made `get_vinted_market_price()` fully async** - no more `asyncio.run()` conflicts
 2. **Replaced sync `VintedScraper` with `AsyncVintedScraper`** - proper async support
-3. **Added proper await handling** throughout `bot.py`  
+3. **Added proper await handling** throughout `deal_hunter/bot/app.py` (formerly `bot.py`)  
 4. **Updated imports** to use async-compatible classes
 5. **Maintained resource cleanup** for Playwright sessions
 6. **Verified no event loop blocking occurs** during searches

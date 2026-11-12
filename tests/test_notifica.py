@@ -3,8 +3,8 @@
 import aiosqlite
 import pytest
 
-import init_db
-import notifica
+from deal_hunter.core import db as init_db
+from deal_hunter.bot import notifica
 
 
 class FakeBot:

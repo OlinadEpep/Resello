@@ -6,9 +6,9 @@ A Telegram bot that monitors Vinted for deals. It calculates market prices based
 
 - **Main Technologies:** Python, `python-telegram-bot`, SQLite, Playwright, BeautifulSoup, `vinted-scraper`.
 - **Architecture:**
-    - `bot.py`: Telegram interface, command handling, and job scheduling (apscheduler).
-    - `vinted_market.py`: Vinted price estimation using the `vinted-scraper` library.
-    - `init_db.py`: Database schema initialization.
+    - `deal_hunter/bot/app.py` (launched by the root `bot.py`): Telegram interface, command handling, and job scheduling (apscheduler).
+    - `deal_hunter/vinted/market.py`: Vinted price estimation using the `vinted-scraper` library.
+    - `deal_hunter/core/db.py`: Database schema initialization.
     - `main.py`: Application entry point.
     - `deals.db`: SQLite database for tracking items and preventing duplicate notifications.
 
@@ -33,7 +33,7 @@ A Telegram bot that monitors Vinted for deals. It calculates market prices based
     ```
 3.  **Database Initialization:**
     ```bash
-    python3 init_db.py
+    python3 -m deal_hunter.core.db
     ```
 
 ### Running the Bot
@@ -48,7 +48,7 @@ A Telegram bot that monitors Vinted for deals. It calculates market prices based
 - **Database:** Uses SQLite for persistence. The `items` table tracks monitored queries, and `found_deals` tracks already notified URLs to avoid spam.
 - **Scraping:**
     - Vinted scraping relies on the `vinted-scraper` library and Playwright fallback.
-- **Scheduling:** The bot checks for new deals every 10 minutes (defined in `bot.py`).
+- **Scheduling:** The bot checks for new deals every 10 minutes (defined in `deal_hunter/bot/app.py`).
 - **Market Price:** Calculated using the median price of results, with outliers trimmed (top/bottom 10-20%).
 
 ## Bot Commands

@@ -3,7 +3,7 @@
 import os
 import pytest
 from types import SimpleNamespace
-import deal_judge
+from deal_hunter.jev import judge as deal_judge
 
 
 def _fake_client_factory(answers):

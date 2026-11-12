@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-import deal_judge
+from deal_hunter.jev import judge as deal_judge
 
 
 def test_config_override_via_env(monkeypatch):

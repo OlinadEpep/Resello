@@ -12,7 +12,7 @@ def _live_enabled():
 
 @pytest.mark.skipif(os.getenv("LIVE") != "1", reason="live opt-in: LIVE=1 per eseguire")
 async def test_jev_live_accessory_vs_product():
-    from deal_judge import DealJudge
+    from deal_hunter.jev.judge import DealJudge
     api_key = os.getenv("TYPESAFE_API_KEY")
     if not api_key:
         pytest.skip("TYPESAFE_API_KEY mancante")

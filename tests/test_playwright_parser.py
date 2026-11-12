@@ -1,7 +1,7 @@
 """Test parsing Playwright senza rete: mock get_page_content con HTML fixture."""
 
 import pytest
-from vinted_playwright import VintedPlaywrightScraper
+from deal_hunter.vinted.playwright_scraper import VintedPlaywrightScraper
 
 HTML = """
 <html><body>

@@ -10,12 +10,12 @@ Per nome prodotto (es. "rtx 5060") la ricerca salvata è la ricerca
 testuale di Vinted, che però è larga (trova anche modelli simili e
 annunci che citano il prodotto solo nella descrizione): per questo
 `alerts.match_text` conserva il nome e `process_alert` notifica solo gli
-annunci che lo hanno davvero nel titolo (`vinted_filters.matches_product`).
+annunci che lo hanno davvero nel titolo (`vinted.filters.matches_product`).
 
 Ogni ricerca salvata (tabella `alerts`) viene ricontrollata dal job
 `check_alerts_callback`: la pagina Vinted ordinata dai più recenti viene
 letta con Playwright e gli annunci mai visti (vedi
-`vinted_filters.detect_new_items`) vengono notificati con il link
+`vinted.filters.detect_new_items`) vengono notificati con il link
 dell'annuncio e quello della ricerca con tutti i filtri attivi.
 
 A differenza di /cerca qui non c'è prezzo di mercato né giudizio Jev:
@@ -43,9 +43,9 @@ from telegram.ext import (
 )
 from telegram.warnings import PTBUserWarning
 
-import vinted_filters as vf
-from init_db import DB_PATH
-from vinted_playwright import VintedPlaywrightScraper
+from deal_hunter.vinted import filters as vf
+from deal_hunter.core.db import DB_PATH
+from deal_hunter.vinted.playwright_scraper import VintedPlaywrightScraper
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def _env_int(name, default, minimum):
 
 # Ogni quanto ricontrollare le ricerche salvate (secondi).
 ALERT_INTERVAL_SECONDS = _env_int("ALERT_INTERVAL_SECONDS", 120, 60)
-# Tolleranza sugli id annuncio (vedi vinted_filters.detect_new_items).
+# Tolleranza sugli id annuncio (vedi vinted.filters.detect_new_items).
 # Vinted assegna circa 900.000 id l'ora (misurato a novembre 2026):
 # 1.000.000 copre gli annunci che compaiono in ricerca fino a ~1 ora dopo
 # essere stati creati.

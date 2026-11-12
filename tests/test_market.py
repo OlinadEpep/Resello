@@ -1,6 +1,6 @@
 import types
 import pytest
-import vinted_market
+from deal_hunter.vinted import market as vinted_market
 
 
 class FakeItem:

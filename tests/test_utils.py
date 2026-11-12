@@ -1,4 +1,4 @@
-from utils import (
+from deal_hunter.core.utils import (
     extract_dynamic_keywords,
     calculate_min_price,
     is_valid_item,

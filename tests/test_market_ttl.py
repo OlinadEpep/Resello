@@ -2,7 +2,7 @@
 
 import aiosqlite
 import pytest
-import bot
+from deal_hunter.bot import app as bot
 
 
 async def _db_with_item(last_update_sql="CURRENT_TIMESTAMP"):
@@ -35,7 +35,7 @@ async def test_maybe_refresh_skips_fresh():
             calls.append(q)
             return 999.0, []
 
-        import bot as _b
+        from deal_hunter.bot import app as _b
         _orig = _b.get_vinted_market_price
         _b.get_vinted_market_price = fake_market
         try:
@@ -55,7 +55,7 @@ async def test_maybe_refresh_updates_stale():
         async def fake_market(q):
             return 111.0, ["pluto"]
 
-        import bot as _b
+        from deal_hunter.bot import app as _b
         _orig = _b.get_vinted_market_price
         _b.get_vinted_market_price = fake_market
         try:
@@ -78,7 +78,7 @@ async def test_maybe_refresh_fail_open():
         async def boom(q):
             raise RuntimeError("vinted down")
 
-        import bot as _b
+        from deal_hunter.bot import app as _b
         _orig = _b.get_vinted_market_price
         _b.get_vinted_market_price = boom
         try:

@@ -21,14 +21,14 @@
 
 Il progetto è strutturato in modo modulare:
 
-*   [`main.py`](file:///home/danilo/progetti/deal-hunter/main.py): L'entry point dell'applicazione. Carica le variabili dal file `.env` ed avvia il bot nel venv.
-*   [`bot.py`](file:///home/danilo/progetti/deal-hunter/bot.py): Gestore principale dell'interfaccia Telegram. Gestisce i comandi `/cerca`, `/lista`, `/stop` e pianifica l'esecuzione periodica (ogni 10 minuti) dei controlli sulle offerte.
-*   [`vinted_market.py`](file:///home/danilo/progetti/deal-hunter/vinted_market.py): Logica per il calcolo del prezzo medio su Vinted. Se le API dirette falliscono, passa al fallback di Playwright.
-*   [`vinted_playwright.py`](file:///home/danilo/progetti/deal-hunter/vinted_playwright.py): Scraper basato su Playwright per scansionare Vinted simulando un browser reale.
-*   [`notifica.py`](file:///home/danilo/progetti/deal-hunter/notifica.py): Comando `/notifica` (configurazione guidata dei filtri) e controllo periodico dei nuovi annunci per le ricerche salvate.
-*   [`vinted_filters.py`](file:///home/danilo/progetti/deal-hunter/vinted_filters.py): Categorie, brand e taglie di Vinted, costruzione del link di ricerca filtrato e lettura degli annunci dalla pagina dei risultati.
-*   [`utils.py`](file:///home/danilo/progetti/deal-hunter/utils.py): Contiene costanti di filtraggio (stop words, negative keywords) e funzioni matematiche/statistiche per pulire i prezzi ed estrarre dinamicamente i filtri.
-*   [`init_db.py`](file:///home/danilo/progetti/deal-hunter/init_db.py): Script per inizializzare il database SQLite (`deals.db`) ed effettuare eventuali migrazioni di schema.
+*   [`main.py`](main.py): L'entry point dell'applicazione. Carica le variabili dal file `.env` ed avvia il bot nel venv.
+*   [`deal_hunter/bot/app.py`](deal_hunter/bot/app.py): Gestore principale dell'interfaccia Telegram. Gestisce i comandi `/cerca`, `/lista`, `/stop` e pianifica l'esecuzione periodica (ogni 10 minuti) dei controlli sulle offerte.
+*   [`deal_hunter/vinted/market.py`](deal_hunter/vinted/market.py): Logica per il calcolo del prezzo medio su Vinted. Se le API dirette falliscono, passa al fallback di Playwright.
+*   [`deal_hunter/vinted/playwright_scraper.py`](deal_hunter/vinted/playwright_scraper.py): Scraper basato su Playwright per scansionare Vinted simulando un browser reale.
+*   [`deal_hunter/bot/notifica.py`](deal_hunter/bot/notifica.py): Comando `/notifica` (configurazione guidata dei filtri) e controllo periodico dei nuovi annunci per le ricerche salvate.
+*   [`deal_hunter/vinted/filters.py`](deal_hunter/vinted/filters.py): Categorie, brand e taglie di Vinted, costruzione del link di ricerca filtrato e lettura degli annunci dalla pagina dei risultati.
+*   [`deal_hunter/core/utils.py`](deal_hunter/core/utils.py): Contiene costanti di filtraggio (stop words, negative keywords) e funzioni matematiche/statistiche per pulire i prezzi ed estrarre dinamicamente i filtri.
+*   [`deal_hunter/core/db.py`](deal_hunter/core/db.py): Script per inizializzare il database SQLite (`deals.db`) ed effettuare eventuali migrazioni di schema.
 *   [`deal-hunter.service`](file:///home/danilo/progetti/deal-hunter/deal-hunter.service): Configurazione Systemd per deployare il bot come servizio in background su sistemi Linux.
 
 ---
@@ -72,7 +72,7 @@ TELEGRAM_TOKEN=il_tuo_token_telegram_qui
 Inizializza le tabelle SQLite necessarie al funzionamento del bot:
 
 ```bash
-python3 init_db.py
+python3 -m deal_hunter.core.db
 ```
 
 ---

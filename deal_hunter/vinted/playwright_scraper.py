@@ -7,7 +7,7 @@ from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
-from utils import is_valid_item, compute_service_fee, DEFAULT_SHIPPING
+from deal_hunter.core.utils import is_valid_item, compute_service_fee, DEFAULT_SHIPPING
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +169,7 @@ class VintedPlaywrightScraper:
         return None
 
     async def get_market_price(self, query):
-        from utils import extract_dynamic_keywords, robust_median, sanity_check_market
+        from deal_hunter.core.utils import extract_dynamic_keywords, robust_median, sanity_check_market
         url = f"{self.base_url}/catalog?search_text={query.replace(' ', '+')}&order=relevance"
         content = await self.get_page_content(url)
         if not content:

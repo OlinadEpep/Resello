@@ -1,6 +1,6 @@
 """Test /funzionamento: 2 messaggi, sotto limite Telegram, senza nomi tech."""
 
-import bot
+from deal_hunter.bot import app as bot
 
 
 class FakeMessage:

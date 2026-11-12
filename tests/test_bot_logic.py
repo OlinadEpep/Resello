@@ -3,7 +3,7 @@
 import aiosqlite
 import pytest
 from types import SimpleNamespace
-import bot
+from deal_hunter.bot import app as bot
 
 
 async def _make_db():
@@ -73,10 +73,10 @@ async def test_check_single_item_notifies_only_good(monkeypatch):
         monkeypatch.setattr(bot, "fetch_item_details", fake_fetch)
         monkeypatch.setattr(bot, "notify_deal", _fake_notify := _recorder())
         # disattiva Jev: nessun TYPESAFE -> get_judge None
-        import deal_judge
+        from deal_hunter.jev import judge as deal_judge
         monkeypatch.setattr(deal_judge, "get_judge", lambda: None)
         import sys
-        monkeypatch.setitem(sys.modules, "deal_judge", deal_judge)
+        monkeypatch.setitem(sys.modules, "deal_hunter.jev.judge", deal_judge)
 
         ctx = FakeCtx()
         await bot._check_single_item(db, item, FakeVScraper(), FakeVP(), None, ctx)
@@ -119,10 +119,10 @@ async def test_check_single_item_skips_duplicates(monkeypatch):
         monkeypatch.setattr(bot, "fetch_item_details", fake_fetch)
         calls = []
         monkeypatch.setattr(bot, "notify_deal", _rec2 := _recorder2(calls))
-        import deal_judge
+        from deal_hunter.jev import judge as deal_judge
         monkeypatch.setattr(deal_judge, "get_judge", lambda: None)
         import sys
-        monkeypatch.setitem(sys.modules, "deal_judge", deal_judge)
+        monkeypatch.setitem(sys.modules, "deal_hunter.jev.judge", deal_judge)
 
         await bot._check_single_item(db, item, FakeVScraper(), FakeVP(), None, FakeCtx())
         assert calls == []
